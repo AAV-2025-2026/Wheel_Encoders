@@ -1,8 +1,24 @@
+# == DO NOT EDIT THE FOLLOWING LINES for the Raspberry Pi Pico VS Code Extension to work ==
+if(WIN32)
+    set(USERHOME $ENV{USERPROFILE})
+else()
+    set(USERHOME $ENV{HOME})
+endif()
+set(sdkVersion 2.2.0)
+set(toolchainVersion 14_2_Rel1)
+set(picotoolVersion 2.2.0-a4)
+set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
+if (EXISTS ${picoVscode})
+    include(${picoVscode})
+endif()
+# ====================================================================================
+set(PICO_BOARD pico2 CACHE STRING "Board type")
+
 # CMake minimum required version
 cmake_minimum_required(VERSION 3.12)
- 
+
 # Set board
-# set(BOARD_NAME WIZnet_Ethernet_HAT)
+set(BOARD_NAME WIZnet_Ethernet_HAT)
 # set(BOARD_NAME W5100S_EVB_PICO)
 # set(BOARD_NAME W5500_EVB_PICO)
 # set(BOARD_NAME W55RP20_EVB_PICO)
@@ -10,7 +26,7 @@ cmake_minimum_required(VERSION 3.12)
 # set(BOARD_NAME W6300_EVB_PICO)
 # set(BOARD_NAME W5500_EVB_PICO2)
 # set(BOARD_NAME W6100_EVB_PICO2)
-set(BOARD_NAME W6300_EVB_PICO2)
+# set(BOARD_NAME W6300_EVB_PICO2)
 
 
 if(${BOARD_NAME} STREQUAL WIZnet_Ethernet_HAT)
@@ -18,12 +34,12 @@ if(${BOARD_NAME} STREQUAL WIZnet_Ethernet_HAT)
     set(WIZNET_CHIP W5100S)
     add_definitions(-D_WIZCHIP_=W5100S)
     add_definitions(-DDEVICE_BOARD_NAME=WIZnet_Ethernet_HAT)
-    
+
 elseif(${BOARD_NAME} STREQUAL W5100S_EVB_PICO)
     set(WIZNET_CHIP W5100S)
     add_definitions(-D_WIZCHIP_=W5100S)
     add_definitions(-DDEVICE_BOARD_NAME=W5100S_EVB_PICO)
-    
+
 elseif(${BOARD_NAME} STREQUAL W5500_EVB_PICO)
     set(WIZNET_CHIP W5500)
     add_definitions(-D_WIZCHIP_=W5500)
@@ -47,7 +63,7 @@ elseif(${BOARD_NAME} STREQUAL W6300_EVB_PICO)
     set(WIZCHIP_QSPI_MODE QSPI_QUAD_MODE)
     # set(WIZCHIP_QSPI_MODE QSPI_DUAL_MODE)
     # set(WIZCHIP_QSPI_MODE QSPI_SINGLE_MODE)
-    
+
     add_definitions(-D_WIZCHIP_QSPI_MODE_=${WIZCHIP_QSPI_MODE})
 
 elseif(${BOARD_NAME} STREQUAL W5100S_EVB_PICO2)
@@ -55,7 +71,7 @@ elseif(${BOARD_NAME} STREQUAL W5100S_EVB_PICO2)
     set(WIZNET_CHIP W5100S)
     add_definitions(-D_WIZCHIP_=W5100S)
     add_definitions(-DDEVICE_BOARD_NAME=W5100S_EVB_PICO2)
-    
+
 elseif(${BOARD_NAME} STREQUAL W5500_EVB_PICO2)
     set(PICO_PLATFORM rp2350)
     set(WIZNET_CHIP W5500)
@@ -78,10 +94,10 @@ elseif(${BOARD_NAME} STREQUAL W6300_EVB_PICO2)
     set(WIZCHIP_QSPI_MODE QSPI_QUAD_MODE)
     # set(WIZCHIP_QSPI_MODE QSPI_DUAL_MODE)
     # set(WIZCHIP_QSPI_MODE QSPI_SINGLE_MODE)
-    
+
     add_definitions(-D_WIZCHIP_QSPI_MODE_=${WIZCHIP_QSPI_MODE})
 
-else() 
+else()
     message(FATAL_ERROR "BOARD_NAME is wrong = ${BOARD_NAME}")
 endif()
 
@@ -126,7 +142,7 @@ if(NOT DEFINED PORT_DIR)
     message(STATUS "PORT_DIR = ${PORT_DIR}")
 endif()
 
-# Turn off mbedtls test mode 
+# Turn off mbedtls test mode
 set(ENABLE_PROGRAMS OFF CACHE BOOL "Build mbedtls programs")
 set(ENABLE_TESTING OFF CACHE BOOL "Build mbedtls testing")
 add_definitions(-DMBEDTLS_CONFIG_FILE="${PORT_DIR}/mbedtls/inc/ssl_config.h")
@@ -142,10 +158,11 @@ add_compile_options(
         )
 
 # Hardware-specific examples in subdirectories:
-add_subdirectory(examples)
+# add_subdirectory(examples)
+
+add_subdirectory(code)
 
 # Add libraries in subdirectories
 add_subdirectory(${CMAKE_SOURCE_DIR}/libraries)
 add_subdirectory(${MBEDTLS_DIR})
 add_subdirectory(${PORT_DIR})
-
