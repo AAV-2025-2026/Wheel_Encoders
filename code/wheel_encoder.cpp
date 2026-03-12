@@ -12,7 +12,6 @@
 #define abs(x) ((x) < 0 ? -(x) : (x))
 
 // Network Definitions
-#define SOCKET_NUMBER 0
 #define PORT_NUMBER 5000
 
 static wiz_NetInfo g_net_info = {
@@ -125,8 +124,7 @@ int main(void)
                (count > 0 ? "FWD" : (count < 0 ? "REV" : "STOP")));
 
         // Send over network
-        int return_value;
-        return_value = sendto(sock, payload, sizeof(payload), destination_ip, PORT_NUMBER);
+        int return_value = sendto(sock, payload, sizeof(payload), destination_ip, PORT_NUMBER);
         if (return_value < 0) {
             printf("Error sending data. Error code: %d\n", return_value);
         }
