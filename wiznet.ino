@@ -112,7 +112,7 @@ void loop() {
 
   // snapshot and reset the spoke counter
   critical_section_enter_blocking(&g_crit);
-  int32_t count = g_spoke_count + 5;
+  int32_t count = g_spoke_count;
   g_spoke_count = 0;
   critical_section_exit(&g_crit);
 
