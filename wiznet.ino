@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
-#include "hardware/gpio.h"
-#include "pico/critical_section.h"
+#include "hardware/timer.h"
 #include <SPI.h>
 #include <Ethernet.h>
 #include <EthernetUdp.h>
@@ -17,20 +16,26 @@ byte mac[] = {
 #define csPin 17 // Chip select pin, this is needed for the WizNet
 char packetBuffer[UDP_TX_PACKET_MAX_SIZE]; // Buffer to hold data to send // Could be smaller
 
-IPAddress remoteIP(192, 168, 1, 104); // Change to IP of Motor Control
+IPAddress remoteIP(10, 0, 0, 122); // Change to IP of Motor Control
 EthernetUDP Udp;
 
 // Pin definitions
-#define IR_SENSOR_A_PIN     14      // Interrupt pin
-#define IR_SENSOR_B_PIN     15      // Direction phase pin
+#define IR_SENSOR_A_PIN 2  // Forward Sensor
+#define IR_SENSOR_B_PIN 10   // Backward Sensor
 
 // Timing
-#define SEND_INTERVAL_MS    100     // Must match 'interval' in LiveSpeedNode (0.1s)
+#define SEND_INTERVAL 100 // ms
+#define DEBOUNCE 10000 // us
+#define SPOKES_PER_REV 8
+#define DIRECTION_WINDOW 20000 // us
 
 // Shared state
-static volatile int32_t g_spoke_count = 0;
-static critical_section_t g_crit;
-
+volatile int32_t g_spoke_count = 0;
+static bool last_a_state = false;
+static bool last_b_state = false;
+static uint32_t last_trigger = 0; 
+static uint32_t b_last = 0;
+repeating_timer_t timer;
 
 // Pack int32 as big-endian into 4 bytes
 static void pack_be_int32(uint8_t* buf, int32_t value)
@@ -38,96 +43,90 @@ static void pack_be_int32(uint8_t* buf, int32_t value)
     buf[0] = (value >> 24) & 0xFF;
     buf[1] = (value >> 16) & 0xFF;
     buf[2] = (value >>  8) & 0xFF;
-    buf[3] =  value        & 0xFF;
+    buf[3] = value & 0xFF;
 }
 
-
-// GPIO ISR
-/**
- * Fires on every falling edge of Sensor A (spoke detected).
- * Reads Sensor B at that instant to determine direction:
- *   B is LOW  -> Sensor A leading -> forward  -> +1
- *   B is HIGH -> Sensor B leading -> reverse  -> -1
- */
-static void gpio_isr(uint gpio, uint32_t events)
+// Sensor polling — called every 1ms by repeating timer
+bool sensor_callback(repeating_timer_t *rt)
 {
-    if (gpio == IR_SENSOR_A_PIN && (events & GPIO_IRQ_EDGE_FALL))
-    {
-        bool b_high = gpio_get(IR_SENSOR_B_PIN);
+    bool a = gpio_get(IR_SENSOR_A_PIN);
+    bool b = gpio_get(IR_SENSOR_B_PIN);
+    uint32_t now = time_us_32();
 
-        critical_section_enter_blocking(&g_crit);
-        if (!b_high) {
-            g_spoke_count++;    // forward
-        } else {
-            g_spoke_count--;    // reverse
-        }
-        critical_section_exit(&g_crit);
+    // Track when B last went high
+    if (b == true && last_b_state == false) {
+        b_last = now;
     }
+    last_b_state = b;
+
+    // On A rising edge
+    if (a == true && last_a_state == false) {
+        if (now - last_trigger > DEBOUNCE) {
+            last_trigger = now;
+            // If B went high recently before A, B led -> reverse
+            // If B is not high yet, A led -> forward
+            if (b == true && (now - b_last < DIRECTION_WINDOW)) {
+                g_spoke_count--;  // reverse, B led
+            } else {
+                g_spoke_count++;  // forward, A led
+            }
+        }
+    }
+    last_a_state = a;
+    return true;
 }
 
-
-// Main
-void setup(void)
+void setup()
 {
     Serial.begin(9600);
-    critical_section_init(&g_crit);
+    while (!Serial) delay(10);
 
     // GPIO setup
-    gpio_init(IR_SENSOR_A_PIN);
-    gpio_set_dir(IR_SENSOR_A_PIN, GPIO_IN);
-    gpio_pull_up(IR_SENSOR_A_PIN);
+    pinMode(IR_SENSOR_A_PIN, INPUT);
+    pinMode(IR_SENSOR_B_PIN, INPUT);
 
-    gpio_init(IR_SENSOR_B_PIN);
-    gpio_set_dir(IR_SENSOR_B_PIN, GPIO_IN);
-    gpio_pull_up(IR_SENSOR_B_PIN);
+    // Start 1ms polling timer
+    add_repeating_timer_ms(1, sensor_callback, NULL, &timer);
 
-    gpio_set_irq_enabled_with_callback(IR_SENSOR_A_PIN,
-                                       GPIO_IRQ_EDGE_FALL,
-                                       true,
-                                       &gpio_isr);
+    Serial.println("Tachometer ready.");
 
-    Serial.printf("Tachometer started.\n");
-
-    // WizNet Setup
+    // WizNet setup
     Ethernet.init(csPin);
-
     Serial.print("Attempting to obtain IP address using DHCP\n");
     if (Ethernet.begin(mac) == 0) {
-      Serial.print("Failed to obtain IP address using DHCP, aborting\n");
-      while (true); // Just loop forever at this point
+        Serial.print("Failed to obtain IP address using DHCP, aborting\n");
+        while (true);
     } else {
-      Serial.print("Successfully obtained IP address: ");
-      Serial.println(Ethernet.localIP());
+        Serial.print("Successfully obtained IP address: ");
+        Serial.println(Ethernet.localIP());
     }
 
     Udp.begin(LOCAL_PORT_NUMBER);
-    Serial.print("Wiznet Setup complete\n");
+    Serial.println("WizNet setup complete.");
 }
 
-void loop() {
-  // Main loop
-  absolute_time_t next_window = make_timeout_time_ms(SEND_INTERVAL_MS);
-  sleep_until(next_window);
-  next_window = make_timeout_time_ms(SEND_INTERVAL_MS);
+void loop()
+{
+    delay(SEND_INTERVAL);
 
-  // snapshot and reset the spoke counter
-  critical_section_enter_blocking(&g_crit);
-  int32_t count = g_spoke_count;
-  g_spoke_count = 0;
-  critical_section_exit(&g_crit);
+    // Snapshot and reset spoke counter
+    noInterrupts();
+    int32_t count = g_spoke_count;
+    g_spoke_count = 0;
+    interrupts();
 
-  // Pack as big-endian int32
-  uint8_t payload[4];
-  pack_be_int32(payload, count);
+    // Pack as big-endian int32
+    uint8_t payload[4];
+    pack_be_int32(payload, count);
 
-  // Debug output
-  float rpm = ((float)abs(count) / 8.0f) * (1000.0f / SEND_INTERVAL_MS) * 60.0f;
-  Serial.printf("Spokes: %4d | RPM: %7.1f | Dir: %s\n",
-          static_cast<int>(count), rpm,
-          (count > 0 ? "FWD" : (count < 0 ? "REV" : "STOP")));
+    // Debug output
+    float rpm = ((float)abs(count) / (float)SPOKES_PER_REV) * (1000.0f / SEND_INTERVAL) * 60.0f;
+    Serial.printf("Spokes: %4d | RPM: %7.1f | Dir: %s\n",
+        int(count), rpm,
+        count > 0 ? "FWD" : (count < 0 ? "REV" : "STOP"));
 
-  // Send data over network
-  Udp.beginPacket(remoteIP, REMOTE_PORT_NUMBER);
-  Udp.write(payload, 4);
-  Udp.endPacket();
+    // Send data over network
+    Udp.beginPacket(remoteIP, REMOTE_PORT_NUMBER);
+    Udp.write(payload, 4);
+    Udp.endPacket();
 }
