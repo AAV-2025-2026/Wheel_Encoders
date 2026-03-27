@@ -16,7 +16,7 @@ byte mac[] = {
 #define csPin 17 // Chip select pin, this is needed for the WizNet
 char packetBuffer[UDP_TX_PACKET_MAX_SIZE]; // Buffer to hold data to send // Could be smaller
 
-IPAddress remoteIP(10, 0, 0, 122); // Change to IP of Motor Control
+IPAddress remoteIP(192, 168, 1, 193); // Change to IP of Motor Control
 EthernetUDP Udp;
 
 // Pin definitions
